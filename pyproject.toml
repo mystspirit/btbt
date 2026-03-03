@@ -1,0 +1,28 @@
+[project]
+name = "solana-usdc-grid-bot"
+version = "0.2.0"
+description = "Solana DEX/perp grid bot with long/short and built-in 30d backtest"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+live = [
+  "driftpy>=0.8.31",
+  "solana>=0.36.0",
+  "solders>=0.26.0",
+  "base58>=2.1.1"
+]
+
+test = [
+  "pytest>=8.0"
+]
+
+[project.scripts]
+gridbot = "bot.main:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
