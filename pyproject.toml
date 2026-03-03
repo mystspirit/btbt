@@ -1,0 +1,16 @@
+[project]
+name = "solana-usdc-grid-bot"
+version = "0.1.0"
+description = "Ultra-fast Solana DEX grid arbitrage bot with long/short + 30d backtest"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+gridbot = "bot.main:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
