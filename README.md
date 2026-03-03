@@ -1,38 +1,51 @@
 # Solana USDC Grid Arbitrage Bot (DEX-only)
 
-Bot je pripravený na **USDC pár na Solane** s architektúrou pre:
-- grid obchodovanie v oboch smeroch (**long + short**),
-- ultra-rýchly decision loop (in-memory grid + low-latency execution vrstva),
-- vstavaný backtest s validáciou minimálne **30 dní** dát,
-- wallet-first prístup (žiadny CEX, iba DEX/perp protokol).
+Bot pre **USDC na Solane** s:
+- grid obchodovaním v oboch smeroch (**long + short**),
+- vstavaným backtestom s validáciou min. **30 dní**,
+- live obchodovaním **out of the box** na Drift perps (wallet + RPC, bez CEX).
 
 ## Čo je implementované
-- `GridEngine`: generuje long/short grid úrovne.
-- `Backtester`: načíta CSV (`timestamp,close`), overí 30+ dní a spočíta PnL / DD / počet obchodov.
-- `DexClient` abstrakcia + `MockDexClient` pre paper-live simuláciu.
-- `DriftDexClient` skeleton pre live on-chain integráciu (wallet signing + Solana tx).
+- `GridEngine`: symetrické long/short grid úrovne.
+- `Backtester`: načítanie CSV, 30+ dní horizon check, fees/slippage, DD/PnL.
+- Anti-overfill gating: level sa nefilluje na každej sviečke, až po re-arm.
+- `DriftDexClient`: reálne odoslanie limit perp orderu na Drift cez podpísaný wallet tx.
+- CLI: `backtest`, `paper-live`, `live`.
 
-## Rýchly štart
+## Inštalácia
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-### Paper live (simulácia)
+Pre live trading nainštaluj live extra:
 ```bash
-gridbot paper-live --price 150
+pip install -e .[live]
 ```
 
-### Backtest (min. 30 dní)
+## Backtest
 ```bash
 gridbot backtest --csv data/sample_31d.csv
 ```
 
-## Formát dát
-CSV stĺpce:
-- `timestamp` (ISO format, napr. `2025-01-01T00:00:00+00:00`)
-- `close` (float)
+## Paper live
+```bash
+gridbot paper-live --price 150
+```
 
-## Poznámka k short smeru
-Short na spot DEX-e bez marginu nie je natívne možný. Preto je navrhnutá DEX/perp vrstva (napr. Drift), kde short aj long fungujú on-chain cez wallet.
+## Live trading (out of the box)
+1. Priprav Drift private key v base58 (`DRIFT_PRIVATE_KEY_B58`).
+2. Spusť live command:
+
+```bash
+export DRIFT_PRIVATE_KEY_B58='...'
+gridbot live \
+  --rpc-url https://api.mainnet-beta.solana.com \
+  --market-index 0 \
+  --sub-account-id 0 \
+  --price-csv data/sample_31d.csv \
+  --max-orders 3
+```
+
+> Poznámka: short na spot DEX-e bez marginu nie je natívny, preto je live vrstva riešená cez perp DEX (Drift), stále wallet-first a bez CEX.
