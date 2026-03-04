@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -82,7 +83,8 @@ class DriftDexClient:
             base_asset_amount = int(qty_base * 1_000_000_000)
             price = int(limit_price * 1_000_000)
 
-            tx_sig = await client.place_perp_order(
+            tx_sig = await self._place_perp_order_compat(
+                client=client,
                 market_index=self.market_index,
                 direction=direction,
                 base_asset_amount=base_asset_amount,
@@ -95,3 +97,55 @@ class DriftDexClient:
             return str(tx_sig)
         finally:
             await connection.close()
+
+    async def _place_perp_order_compat(
+        self,
+        client: object,
+        market_index: int,
+        direction: object,
+        base_asset_amount: int,
+        price: int,
+        order_type: object,
+        market_type: object,
+        reduce_only: bool,
+    ) -> object:
+        """Compatibility layer for driftpy API variants.
+
+        Some versions accept explicit kwargs (`market_index=...`) and other
+        versions accept a single `OrderParams` object.
+        """
+
+        place_order = getattr(client, "place_perp_order")
+        params = inspect.signature(place_order).parameters
+
+        if "market_index" in params:
+            return await place_order(
+                market_index=market_index,
+                direction=direction,
+                base_asset_amount=base_asset_amount,
+                price=price,
+                order_type=order_type,
+                market_type=market_type,
+                reduce_only=reduce_only,
+            )
+
+        if "order_params" in params:
+            try:
+                from driftpy.types import OrderParams
+            except Exception as exc:  # pragma: no cover - import error path
+                raise RuntimeError("Unable to import driftpy OrderParams for this driftpy version") from exc
+
+            order_params = OrderParams(
+                market_index=market_index,
+                direction=direction,
+                base_asset_amount=base_asset_amount,
+                price=price,
+                order_type=order_type,
+                market_type=market_type,
+                reduce_only=reduce_only,
+            )
+            return await place_order(order_params)
+
+        raise RuntimeError(
+            "Unsupported driftpy place_perp_order signature. Please update driftpy or adapt integration."
+        )
