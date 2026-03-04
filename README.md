@@ -46,10 +46,8 @@ gridbot live \
   --sub-account-id 0 \
   --price-csv data/sample_31d.csv \
   --max-orders 3 \
-  --user-sync-timeout-s 30 \
-  --user-sync-poll-ms 300 \
-  --submit-retries 2 \
-  --retry-backoff-ms 900
+  --user-sync-timeout-s 20 \
+  --user-sync-poll-ms 300
 ```
 
 > Poznámka: short na spot DEX-e bez marginu nie je natívny, preto je live vrstva riešená cez perp DEX (Drift), stále wallet-first a bez CEX.

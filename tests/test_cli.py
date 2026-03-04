@@ -19,10 +19,6 @@ def test_live_requires_private_key(monkeypatch: pytest.MonkeyPatch) -> None:
         price_csv="data/sample_31d.csv",
         max_orders=1,
         sleep_ms=1,
-        user_sync_timeout_s=1.0,
-        user_sync_poll_ms=1,
-        submit_retries=1,
-        retry_backoff_ms=1,
     )
     with pytest.raises(ValueError, match="Missing private key"):
         run_live(args)

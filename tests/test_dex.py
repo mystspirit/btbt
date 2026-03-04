@@ -60,18 +60,6 @@ class _BrokenUserAccountClient:
         raise AttributeError("NoneType has no attribute data")
 
 
-class _RetryDriftDexClient(DriftDexClient):
-    def __init__(self) -> None:
-        super().__init__("rpc", "k", 0, submit_retries=2, retry_backoff_ms=1)
-        self.calls = 0
-
-    async def _submit_perp_order_async(self, side: Side, qty_base: float, limit_price: float) -> str:
-        self.calls += 1
-        if self.calls == 1:
-            raise RuntimeError("Drift user account subscriber is not initialized after waiting")
-        return "ok-tx"
-
-
 def test_drift_client_defaults_to_mainnet_env() -> None:
     client = DriftDexClient(
         rpc_url="https://api.mainnet-beta.solana.com",
@@ -135,10 +123,3 @@ def test_ensure_user_ready_raises_clear_error_on_missing_subscriber() -> None:
     c = DriftDexClient("rpc", "k", 0, sub_account_id=1, user_sync_timeout_s=0.01, user_sync_poll_ms=1)
     with pytest.raises(RuntimeError, match="not initialized after waiting"):
         asyncio.run(c._ensure_user_ready(_BrokenUserAccountClient()))
-
-
-def test_submit_perp_order_retries_on_subscriber_race() -> None:
-    c = _RetryDriftDexClient()
-    fill = c.submit_perp_order(Side.LONG, 0.1, 100.0)
-    assert fill.tx_id == "ok-tx"
-    assert c.calls == 2

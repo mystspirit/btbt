@@ -40,10 +40,8 @@ class DriftDexClient:
         market_index: int,
         sub_account_id: int = 0,
         drift_env: str = "mainnet",
-        user_sync_timeout_s: float = 30.0,
-        user_sync_poll_ms: int = 300,
-        submit_retries: int = 2,
-        retry_backoff_ms: int = 900,
+        user_sync_timeout_s: float = 12.0,
+        user_sync_poll_ms: int = 250,
     ) -> None:
         self.rpc_url = rpc_url
         self.private_key_b58 = private_key_b58
@@ -52,22 +50,10 @@ class DriftDexClient:
         self.drift_env = drift_env
         self.user_sync_timeout_s = user_sync_timeout_s
         self.user_sync_poll_ms = user_sync_poll_ms
-        self.submit_retries = max(1, submit_retries)
-        self.retry_backoff_ms = max(1, retry_backoff_ms)
 
     def submit_perp_order(self, side: Side, qty_base: float, limit_price: float) -> Fill:
-        last_exc: Exception | None = None
-        for attempt in range(1, self.submit_retries + 1):
-            try:
-                tx_sig = asyncio.run(self._submit_perp_order_async(side, qty_base, limit_price))
-                return Fill(side=side, qty_base=qty_base, price=limit_price, tx_id=tx_sig)
-            except RuntimeError as exc:
-                last_exc = exc
-                if "subscriber is not initialized" not in str(exc) or attempt >= self.submit_retries:
-                    raise
-                asyncio.run(asyncio.sleep(self.retry_backoff_ms / 1000))
-
-        raise RuntimeError("Live order submission failed") from last_exc
+        tx_sig = asyncio.run(self._submit_perp_order_async(side, qty_base, limit_price))
+        return Fill(side=side, qty_base=qty_base, price=limit_price, tx_id=tx_sig)
 
     async def _submit_perp_order_async(self, side: Side, qty_base: float, limit_price: float) -> str:
         try:
@@ -135,60 +121,25 @@ class DriftDexClient:
             await self._call_client_method(client, "add_and_subscribe_user", self.sub_account_id)
             await self._call_client_method(client, "fetch_accounts")
             await self._call_client_method(client, "sync")
-            await self._call_client_method(client, "resubscribe")
 
-            ready, exc = await self._probe_user_ready(client)
-            if ready:
+            get_user_account = getattr(client, "get_user_account", None)
+            if not callable(get_user_account):
                 return
-            if exc is not None:
+
+            try:
+                user = get_user_account(self.sub_account_id)
+                if user is not None:
+                    return
+            except AttributeError as exc:
                 last_exc = exc
 
             await asyncio.sleep(max(self.user_sync_poll_ms, 1) / 1000)
 
         raise RuntimeError(
             "Drift user account subscriber is not initialized after waiting. "
-            "Websocket snapshot may still be syncing OR Drift sub-account may be missing/unfunded. "
-            "Increase --user-sync-timeout-s and verify sub-account + collateral."
+            "The websocket snapshot may still be syncing OR your Drift sub-account is missing/unfunded. "
+            "Try again in a few seconds and verify sub-account + collateral."
         ) from last_exc
-
-    async def _probe_user_ready(self, client: object) -> tuple[bool, Exception | None]:
-        get_user_account = getattr(client, "get_user_account", None)
-        if callable(get_user_account):
-            try:
-                user = get_user_account(self.sub_account_id)
-                if user is not None:
-                    return True, None
-            except AttributeError as exc:
-                # Typical driftpy race: account_subscriber still has None data.
-                pass
-            except Exception as exc:
-                return False, exc
-
-        get_user = getattr(client, "get_user", None)
-        if callable(get_user):
-            try:
-                user_obj = get_user(self.sub_account_id)
-                if user_obj is None:
-                    return False, None
-
-                # Some versions require user-level subscribe.
-                subscribe = getattr(user_obj, "subscribe", None)
-                if callable(subscribe):
-                    maybe = subscribe()
-                    if inspect.isawaitable(maybe):
-                        await maybe
-
-                get_user_account = getattr(user_obj, "get_user_account", None)
-                if callable(get_user_account):
-                    ua = get_user_account()
-                    if ua is not None:
-                        return True, None
-            except AttributeError as exc:
-                return False, exc
-            except Exception as exc:
-                return False, exc
-
-        return False, None
 
     async def _call_client_method(self, client: object, method_name: str, *args: object) -> None:
         method = getattr(client, method_name, None)
