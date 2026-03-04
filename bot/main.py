@@ -58,6 +58,8 @@ def run_live(args: argparse.Namespace) -> int:
         private_key_b58=private_key_b58,
         market_index=args.market_index,
         sub_account_id=args.sub_account_id,
+        user_sync_timeout_s=args.user_sync_timeout_s,
+        user_sync_poll_ms=args.user_sync_poll_ms,
     )
 
     print(f"[{datetime.now(timezone.utc).isoformat()}] LIVE start {cfg.pair} / market_index={args.market_index}")
@@ -87,6 +89,8 @@ def make_parser() -> argparse.ArgumentParser:
     real.add_argument("--price-csv", default="data/sample_31d.csv", help="CSV used for anchor/last price")
     real.add_argument("--max-orders", type=int, default=3)
     real.add_argument("--sleep-ms", type=int, default=300)
+    real.add_argument("--user-sync-timeout-s", type=float, default=12.0)
+    real.add_argument("--user-sync-poll-ms", type=int, default=250)
     return parser
 
 

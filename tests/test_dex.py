@@ -40,6 +40,21 @@ class _ReadyClient:
         return object()
 
 
+class _FlakySubscriberClient:
+    def __init__(self, succeed_after: int) -> None:
+        self.calls = 0
+        self.succeed_after = succeed_after
+
+    async def fetch_accounts(self) -> None:
+        return
+
+    def get_user_account(self, sub_account_id: int) -> object:
+        self.calls += 1
+        if self.calls < self.succeed_after:
+            raise AttributeError("NoneType has no attribute data")
+        return object()
+
+
 class _BrokenUserAccountClient:
     def get_user_account(self, sub_account_id: int) -> object:
         raise AttributeError("NoneType has no attribute data")
@@ -97,7 +112,14 @@ def test_ensure_user_ready_calls_sync_methods() -> None:
     assert "get_user_account:7" in fake.calls
 
 
+def test_ensure_user_ready_retries_until_data_arrives() -> None:
+    c = DriftDexClient("rpc", "k", 0, user_sync_timeout_s=1.0, user_sync_poll_ms=1)
+    fake = _FlakySubscriberClient(succeed_after=3)
+    asyncio.run(c._ensure_user_ready(fake))
+    assert fake.calls >= 3
+
+
 def test_ensure_user_ready_raises_clear_error_on_missing_subscriber() -> None:
-    c = DriftDexClient("rpc", "k", 0, sub_account_id=1)
-    with pytest.raises(RuntimeError, match="subscriber is not initialized"):
+    c = DriftDexClient("rpc", "k", 0, sub_account_id=1, user_sync_timeout_s=0.01, user_sync_poll_ms=1)
+    with pytest.raises(RuntimeError, match="not initialized after waiting"):
         asyncio.run(c._ensure_user_ready(_BrokenUserAccountClient()))

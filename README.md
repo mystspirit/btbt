@@ -45,7 +45,13 @@ gridbot live \
   --market-index 0 \
   --sub-account-id 0 \
   --price-csv data/sample_31d.csv \
-  --max-orders 3
+  --max-orders 3 \
+  --user-sync-timeout-s 20 \
+  --user-sync-poll-ms 300
 ```
 
 > Poznámka: short na spot DEX-e bez marginu nie je natívny, preto je live vrstva riešená cez perp DEX (Drift), stále wallet-first a bez CEX.
+
+
+Ak dostaneš hlášku `Drift user account subscriber is not initialized after waiting`,
+zvýš timeout/poll alebo skontroluj, že Drift sub-account existuje a má collateral.

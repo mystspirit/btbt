@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from dataclasses import dataclass
+from time import monotonic
 from typing import Protocol
 
 from bot.grid import Side
@@ -39,12 +40,16 @@ class DriftDexClient:
         market_index: int,
         sub_account_id: int = 0,
         drift_env: str = "mainnet",
+        user_sync_timeout_s: float = 12.0,
+        user_sync_poll_ms: int = 250,
     ) -> None:
         self.rpc_url = rpc_url
         self.private_key_b58 = private_key_b58
         self.market_index = market_index
         self.sub_account_id = sub_account_id
         self.drift_env = drift_env
+        self.user_sync_timeout_s = user_sync_timeout_s
+        self.user_sync_poll_ms = user_sync_poll_ms
 
     def submit_perp_order(self, side: Side, qty_base: float, limit_price: float) -> Fill:
         tx_sig = asyncio.run(self._submit_perp_order_async(side, qty_base, limit_price))
@@ -108,22 +113,33 @@ class DriftDexClient:
 
     async def _ensure_user_ready(self, client: object) -> None:
         """Ensure drift user/subscriber state is initialized before placing orders."""
+        deadline = monotonic() + self.user_sync_timeout_s
+        last_exc: Exception | None = None
 
-        # Some driftpy versions require an explicit add/sync call after subscribe.
-        await self._call_client_method(client, "add_user", self.sub_account_id)
-        await self._call_client_method(client, "add_and_subscribe_user", self.sub_account_id)
-        await self._call_client_method(client, "fetch_accounts")
-        await self._call_client_method(client, "sync")
+        while monotonic() < deadline:
+            await self._call_client_method(client, "add_user", self.sub_account_id)
+            await self._call_client_method(client, "add_and_subscribe_user", self.sub_account_id)
+            await self._call_client_method(client, "fetch_accounts")
+            await self._call_client_method(client, "sync")
 
-        get_user_account = getattr(client, "get_user_account", None)
-        if callable(get_user_account):
+            get_user_account = getattr(client, "get_user_account", None)
+            if not callable(get_user_account):
+                return
+
             try:
-                get_user_account(self.sub_account_id)
+                user = get_user_account(self.sub_account_id)
+                if user is not None:
+                    return
             except AttributeError as exc:
-                raise RuntimeError(
-                    "Drift user account subscriber is not initialized. "
-                    "Make sure your Drift sub-account exists and has collateral, then retry."
-                ) from exc
+                last_exc = exc
+
+            await asyncio.sleep(max(self.user_sync_poll_ms, 1) / 1000)
+
+        raise RuntimeError(
+            "Drift user account subscriber is not initialized after waiting. "
+            "The websocket snapshot may still be syncing OR your Drift sub-account is missing/unfunded. "
+            "Try again in a few seconds and verify sub-account + collateral."
+        ) from last_exc
 
     async def _call_client_method(self, client: object, method_name: str, *args: object) -> None:
         method = getattr(client, method_name, None)
@@ -133,7 +149,6 @@ class DriftDexClient:
         try:
             result = method(*args)
         except TypeError:
-            # Some versions expose these methods without args.
             result = method()
 
         if inspect.isawaitable(result):
@@ -150,8 +165,6 @@ class DriftDexClient:
         market_type: object,
         reduce_only: bool,
     ) -> object:
-        """Compatibility layer for driftpy API variants."""
-
         place_order = getattr(client, "place_perp_order")
         params = inspect.signature(place_order).parameters
 
