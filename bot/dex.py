@@ -70,6 +70,7 @@ class DriftDexClient:
         wallet = Keypair.from_bytes(key_bytes)
 
         connection = AsyncClient(self.rpc_url)
+        client = None
         try:
             client = DriftClient(
                 connection=connection,
@@ -78,6 +79,7 @@ class DriftDexClient:
                 active_sub_account_id=self.sub_account_id,
             )
             await client.subscribe()
+            await self._ensure_user_ready(client)
 
             direction = PositionDirection.Long() if side is Side.LONG else PositionDirection.Short()
             base_asset_amount = int(qty_base * 1_000_000_000)
@@ -93,10 +95,49 @@ class DriftDexClient:
                 market_type=MarketType.Perp(),
                 reduce_only=False,
             )
-            await client.unsubscribe()
             return str(tx_sig)
         finally:
+            if client is not None and hasattr(client, "unsubscribe"):
+                try:
+                    maybe = client.unsubscribe()
+                    if inspect.isawaitable(maybe):
+                        await maybe
+                except Exception:
+                    pass
             await connection.close()
+
+    async def _ensure_user_ready(self, client: object) -> None:
+        """Ensure drift user/subscriber state is initialized before placing orders."""
+
+        # Some driftpy versions require an explicit add/sync call after subscribe.
+        await self._call_client_method(client, "add_user", self.sub_account_id)
+        await self._call_client_method(client, "add_and_subscribe_user", self.sub_account_id)
+        await self._call_client_method(client, "fetch_accounts")
+        await self._call_client_method(client, "sync")
+
+        get_user_account = getattr(client, "get_user_account", None)
+        if callable(get_user_account):
+            try:
+                get_user_account(self.sub_account_id)
+            except AttributeError as exc:
+                raise RuntimeError(
+                    "Drift user account subscriber is not initialized. "
+                    "Make sure your Drift sub-account exists and has collateral, then retry."
+                ) from exc
+
+    async def _call_client_method(self, client: object, method_name: str, *args: object) -> None:
+        method = getattr(client, method_name, None)
+        if not callable(method):
+            return
+
+        try:
+            result = method(*args)
+        except TypeError:
+            # Some versions expose these methods without args.
+            result = method()
+
+        if inspect.isawaitable(result):
+            await result
 
     async def _place_perp_order_compat(
         self,
@@ -109,11 +150,7 @@ class DriftDexClient:
         market_type: object,
         reduce_only: bool,
     ) -> object:
-        """Compatibility layer for driftpy API variants.
-
-        Some versions accept explicit kwargs (`market_index=...`) and other
-        versions accept a single `OrderParams` object.
-        """
+        """Compatibility layer for driftpy API variants."""
 
         place_order = getattr(client, "place_perp_order")
         params = inspect.signature(place_order).parameters
