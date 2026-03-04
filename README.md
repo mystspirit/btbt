@@ -9,7 +9,7 @@ Bot pre **USDC na Solane** s:
 - `GridEngine`: symetrické long/short grid úrovne.
 - `Backtester`: načítanie CSV, 30+ dní horizon check, fees/slippage, DD/PnL.
 - Anti-overfill gating: level sa nefilluje na každej sviečke, až po re-arm.
-- `DriftDexClient`: reálne odoslanie limit perp orderu na Drift cez podpísaný wallet tx.
+- `DriftDexClient`: reálne odoslanie limit perp orderu na Drift cez podpísaný wallet tx (kompatibilné s driftpy `env="mainnet"`).
 - CLI: `backtest`, `paper-live`, `live`.
 
 ## Inštalácia

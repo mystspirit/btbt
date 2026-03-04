@@ -37,11 +37,13 @@ class DriftDexClient:
         private_key_b58: str,
         market_index: int,
         sub_account_id: int = 0,
+        drift_env: str = "mainnet",
     ) -> None:
         self.rpc_url = rpc_url
         self.private_key_b58 = private_key_b58
         self.market_index = market_index
         self.sub_account_id = sub_account_id
+        self.drift_env = drift_env
 
     def submit_perp_order(self, side: Side, qty_base: float, limit_price: float) -> Fill:
         tx_sig = asyncio.run(self._submit_perp_order_async(side, qty_base, limit_price))
@@ -49,7 +51,6 @@ class DriftDexClient:
 
     async def _submit_perp_order_async(self, side: Side, qty_base: float, limit_price: float) -> str:
         try:
-            from driftpy.constants.config import configs
             from driftpy.drift_client import DriftClient
             from driftpy.types import MarketType, OrderType, PositionDirection
             from solana.rpc.async_api import AsyncClient
@@ -72,7 +73,7 @@ class DriftDexClient:
             client = DriftClient(
                 connection=connection,
                 wallet=wallet,
-                env=configs["mainnet"],
+                env=self.drift_env,
                 active_sub_account_id=self.sub_account_id,
             )
             await client.subscribe()
